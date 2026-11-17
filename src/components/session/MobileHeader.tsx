@@ -45,7 +45,10 @@ export const MobileHeader = ({ title }: { title?: string }) => {
             size="xl"
             tone="primary"
             icon={autoRead ? <IconVolumeOutline20 /> : <IconVolumeOffOutline20 />}
-            aria-label={autoRead ? t('autoReadAloudOff') : t('autoReadAloudOn')}
+            // 不要在这里用随状态变化的 aria-label：安卓某些无障碍/朗读服务会
+            // 把它当提示弹出来（手机上表现为一个盖住对话的灰色浮层）。
+            // tooltip 文案固定，移动端不渲染浮层，状态看图标即可。
+            tooltip={t('autoReadAloudOn')}
             onClick={toggleAutoRead}
           />
           <IconButton
