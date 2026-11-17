@@ -523,3 +523,35 @@ export const IconToastError16 = () => (
     />
   </svg>
 )
+
+/**
+ * 顶栏喇叭：自动朗读开着。喇叭本体 + 两道向右扩散的声波。
+ * 用填充而非描边，跟本文件其余图标一致（都是纯 currentColor 填充）。
+ */
+export const IconVolumeOutline20 = () => (
+  <svg width={20} height={20} viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M9.6 3.05v13.9l-4.72-3.98H2.5V7.03h2.38L9.6 3.05Z" fill="currentColor" />
+    <path
+      d="M11.9 7.15a3.72 3.72 0 0 1 0 5.7l-1.06-1.24a2.16 2.16 0 0 0 0-3.22L11.9 7.15Z"
+      fill="currentColor"
+    />
+    <path
+      d="M14.3 4.8a7.36 7.36 0 0 1 0 10.4l-1.05-1.23a5.8 5.8 0 0 0 0-7.94L14.3 4.8Z"
+      fill="currentColor"
+    />
+  </svg>
+)
+
+/**
+ * 顶栏喇叭（划线）：自动朗读关着。喇叭本体 + 一个叉，
+ * 比斜杠在小尺寸下更好认。
+ */
+export const IconVolumeOffOutline20 = () => (
+  <svg width={20} height={20} viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M9.6 3.05v13.9l-4.72-3.98H2.5V7.03h2.38L9.6 3.05Z" fill="currentColor" />
+    <path
+      d="M12.62 7.28l1.06-1.06 2.16 2.16 2.16-2.16 1.06 1.06-2.16 2.16 2.16 2.16-1.06 1.06-2.16-2.16-2.16 2.16-1.06-1.06 2.16-2.16-2.16-2.16Z"
+      fill="currentColor"
+    />
+  </svg>
+)

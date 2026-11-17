@@ -5,8 +5,25 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="theme-color" content="#ffffff" />
     <title>API 使用 demo</title>
+    <!-- 可安装到手机桌面：manifest 与图标 -->
+    <link rel="manifest" href="manifest.json" />
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="DeepSeek" />
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // 注册 Service Worker：只用于让浏览器认定这是可安装的 PWA，
+      // 并把带 hash 的静态资源留着，减少二次启动的下载量。
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('sw.js').catch(function () {});
+        });
+      }
+    </script>
   </body>
 </html>

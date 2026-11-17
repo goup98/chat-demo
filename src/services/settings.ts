@@ -17,6 +17,8 @@ type Settings = {
   thinking: boolean
   search: boolean
   siderCollapsed: boolean
+  /** 每条回复生成完自动朗读；顶栏喇叭按钮控制的就是它 */
+  autoReadAloud: boolean
 }
 
 const KEYS = {
@@ -28,6 +30,7 @@ const KEYS = {
   thinking: 'chat-demo:thinking',
   search: 'chat-demo:search',
   siderCollapsed: 'chat-demo:sider-collapsed',
+  autoReadAloud: 'chat-demo:auto-read-aloud',
 } as const
 
 const read = (key: string) => {
@@ -96,6 +99,7 @@ export const useSettings = create<Settings>(() => ({
   thinking: read(KEYS.thinking) === 'true',
   search: read(KEYS.search) === 'true',
   siderCollapsed: read(KEYS.siderCollapsed) === 'true',
+  autoReadAloud: read(KEYS.autoReadAloud) === 'true',
 }))
 
 export const setLocale = (locale: Locale) => {
@@ -137,4 +141,9 @@ export const setSearch = (search: boolean) => {
 export const setSiderCollapsed = (siderCollapsed: boolean) => {
   write(KEYS.siderCollapsed, String(siderCollapsed))
   useSettings.setState({ siderCollapsed })
+}
+
+export const setAutoReadAloud = (autoReadAloud: boolean) => {
+  write(KEYS.autoReadAloud, String(autoReadAloud))
+  useSettings.setState({ autoReadAloud })
 }

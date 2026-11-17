@@ -17,3 +17,11 @@
   font: var(--dsw-font-s-strong-14);
   color: var(--dsw-alias-label-primary);
 }
+
+/* 欢迎页右侧的两个图标：自动朗读 + 新建对话，跟左侧菜单一起把顶栏撑满 */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}

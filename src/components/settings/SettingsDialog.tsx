@@ -14,9 +14,11 @@ import {
   clearHistory,
   exportHistory,
   importHistory,
+  importHistoryMerged,
 } from '../../services/chat/backup.js'
+import { exportSessionMarkdown, hasExportableContent } from '../../services/chat/exportChat.js'
 import { useIsMobile } from '../../app/viewport.js'
-import { useChatStore } from '../../services/chat/store.js'
+import { syncInBackground, useChatStore } from '../../services/chat/store.js'
 import { regionCodes, getRegionName, provinces } from '../../services/location.js'
 import {
   isChineseBrowser,
@@ -104,7 +106,9 @@ const SettingsContent = () => {
           ) : (
             <>
               <ApiKeyField editor={apiKeyEditor} />
+              <SyncStatus />
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
+              <ExportCurrentChat disabled={historyBusy} />
               <ExportHistory disabled={historyBusy} />
               <SettingCell
                 label={t('deleteAllSessions')}
@@ -314,7 +318,7 @@ const TtsVoiceSetting = () => {
   )
 }
 
-/** 覆盖导入的二次确认，叠在设置弹窗上 */
+/** 导入方式确认，叠在设置弹窗上：合并追加、覆盖替换，默认推荐合并 */
 const ImportConfirm = ({
   historyImport,
 }: {
@@ -331,13 +335,17 @@ const ImportConfirm = ({
           <Button variant="outlined" size="m" autoFocus onClick={historyImport.cancel}>
             {t('cancel')}
           </Button>
-          <Button variant="dangerOutlined" size="m" onClick={() => void historyImport.confirm()}>
+          <Button variant="dangerOutlined" size="m" onClick={() => void historyImport.confirmReplace()}>
             {t('historyImportConfirm')}
+          </Button>
+          <Button variant="primary" size="m" onClick={() => void historyImport.confirmMerge()}>
+            {t('historyImportMerge')}
           </Button>
         </>
       }
     >
       <div className={styles.importConfirmText}>{t('historyImportConfirmDescription')}</div>
+      <div className={styles.importConfirmText}>{t('historyImportMergeHint')}</div>
     </Modal>
   )
 }
@@ -436,14 +444,17 @@ const SettingCell = ({
   )
 }
 
-/** 选文件后先提示覆盖；确认后才检查文件并执行导入，任何错误都提示导入失败。 */
+/**
+ * 选文件后先选导入方式：合并只追加本地没有的会话（按 id 判重），
+ * 覆盖会先用归档替换全部本地记录。任何错误都提示导入失败。
+ */
 const useHistoryImport = () => {
   const [file, setFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<Status>(null)
   const importing = useRef(false)
 
-  const confirm = async () => {
+  const run = async (mode: 'merge' | 'replace') => {
     if (!file || importing.current) {
       return
     }
@@ -452,8 +463,17 @@ const useHistoryImport = () => {
     setBusy(true)
     setStatus(null)
     try {
-      const count = await importHistory(file)
-      setStatus({ key: count === 1 ? 'historyImportedOne' : 'historyImported', params: { count } })
+      if (mode === 'merge') {
+        const { added, updated, skipped } = await importHistoryMerged(file)
+        setStatus(
+          added > 0 || updated > 0
+            ? { key: 'historyMergedResult', params: { count: added, updated, skipped } }
+            : { key: 'historyMergedNothing', params: { skipped } }
+        )
+      } else {
+        const count = await importHistory(file)
+        setStatus({ key: count === 1 ? 'historyImportedOne' : 'historyImported', params: { count } })
+      }
     } catch {
       setStatus({ key: 'historyImportFailed', error: true })
     } finally {
@@ -462,7 +482,15 @@ const useHistoryImport = () => {
     }
   }
 
-  return { file, busy, status, select: setFile, cancel: () => setFile(null), confirm }
+  return {
+    file,
+    busy,
+    status,
+    select: setFile,
+    cancel: () => setFile(null),
+    confirmMerge: () => run('merge'),
+    confirmReplace: () => run('replace'),
+  }
 }
 
 /** 导入 = 覆盖：用选中文件替换本地全部会话与附件。 */
@@ -507,6 +535,90 @@ const ImportHistory = ({
             }}
           />
         </>
+      }
+    />
+  )
+}
+
+/**
+ * 云同步状态。
+ * 账号 owner 由服务端 GET /api/chat/index 回报，前端只负责显示——
+ * 绝不接受前端传入 owner，否则改一下请求就能读到别人的数据。
+ */
+const SyncStatus = () => {
+  const t = useTranslate()
+  const sync = useChatStore((state) => state.sync)
+  const stateText =
+    sync.state === 'ready'
+      ? t('syncStateReady')
+      : sync.state === 'syncing'
+        ? t('syncStateSyncing')
+        : sync.state === 'error'
+          ? t('syncStateError', { message: sync.message ?? '' })
+          : t('syncStateOff')
+  const parts = [
+    sync.owner ? t('syncAccount', { owner: sync.owner }) : '',
+    stateText,
+    sync.at ? t('syncAt', { time: new Date(sync.at).toLocaleString('zh-CN') }) : '',
+    sync.pending ? t('syncPending', { count: sync.pending }) : '',
+  ].filter(Boolean)
+
+  return (
+    <SettingCell
+      label={t('syncLabel')}
+      description={parts.join(' · ')}
+      status={null}
+      action={
+        <Button
+          variant="outlined"
+          size="m"
+          className={styles.cellButton}
+          disabled={sync.state === 'syncing'}
+          onClick={() => void syncInBackground()}
+        >
+          {sync.state === 'syncing' ? t('syncStateSyncing') : t('syncNow')}
+        </Button>
+      }
+    />
+  )
+}
+
+/**
+ * 将当前打开的会话导出为 Markdown 文件并下载。
+ * 与「导出所有历史对话」不同，这里只取 activeId 指向的会话，从 sessionCache 读，
+ * 不触发任何加载；未打开会话（欢迎页）或会话为空时按钮禁用。
+ */
+const ExportCurrentChat = ({ disabled }: { disabled: boolean }) => {
+  const t = useTranslate()
+  const session = useChatStore((state) =>
+    state.activeId ? state.sessionCache[state.activeId] : undefined,
+  )
+  const exportable = hasExportableContent(session)
+
+  const onExport = () => {
+    if (!exportable) {
+      return
+    }
+    const name = exportSessionMarkdown(session)
+    showToast(t('exportChatDone', { name }))
+  }
+
+  return (
+    <SettingCell
+      label={t('exportChatLabel')}
+      description={t('exportChatDescription')}
+      status={null}
+      action={
+        <Button
+          variant="outlined"
+          size="m"
+          className={styles.cellButton}
+          disabled={disabled || !exportable}
+          onClick={onExport}
+        >
+          <IconDownloadOutline16 />
+          {t('exportChatDownload')}
+        </Button>
       }
     />
   )

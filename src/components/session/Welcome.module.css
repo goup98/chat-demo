@@ -16,6 +16,13 @@
   padding: 0 32px 64px;
 }
 
+.logo {
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+  margin-bottom: 24px;
+}
+
 .greeting {
   display: flex;
   align-items: center;
@@ -48,6 +55,12 @@
     max-width: none;
     margin: 0;
     padding: 0 16px env(safe-area-inset-bottom);
+  }
+
+  .logo {
+    width: 60px;
+    height: 60px;
+    margin-bottom: 18px;
   }
 
   .greeting {

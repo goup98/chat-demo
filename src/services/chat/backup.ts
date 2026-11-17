@@ -1,6 +1,6 @@
 import { formatDate } from '../../utils/format.js'
 import * as db from './db.js'
-import { replaceHistory, useChatStore } from './store.js'
+import { mergeHistory, replaceHistory, useChatStore } from './store.js'
 import type { Session } from './types.js'
 
 export { BackupError } from './history/errors.js'
@@ -48,6 +48,20 @@ export const importHistory = (file: File): Promise<number> =>
     const { checkArchiveFormat, importArchive } = await import('./history/importArchive.js')
     await checkArchiveFormat(file)
     return replaceHistory(() => importArchive(file))
+  })
+
+/**
+ * 合并导入：校验 ZIP 后把归档内容并进本地。
+ * 会话 id 全新则新增；id 已存在则按消息 id 求并集，把对方设备上新增的消息补进来；
+ * 完全相同则计入 skipped。返回新增、补充、无变化三种计数。
+ */
+export const importHistoryMerged = (
+  file: File
+): Promise<{ added: number; updated: number; skipped: number }> =>
+  enqueueBackup(async () => {
+    const { checkArchiveFormat, importArchive } = await import('./history/importArchive.js')
+    await checkArchiveFormat(file)
+    return mergeHistory(() => importArchive(file))
   })
 
 /** 确认删除后调用：以空历史原子替换全部本地会话与附件，保留 API Key 和其他设置。 */

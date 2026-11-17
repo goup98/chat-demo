@@ -12,6 +12,9 @@ export const Welcome = () => {
     <div className={styles.container}>
       {isMobile ? <MobileHeader /> : null}
       <div className={styles.welcome}>
+        {/* 官方 App 欢迎页中央是蓝色鲸鱼；网页版原来只有一行问候语。
+            资源取自官方 favicon（本就是透明底、#4D6BFE 单色），随构建带进 dist。 */}
+        <img className={styles.logo} src="logo-96.png" alt="" aria-hidden="true" />
         <div className={styles.greeting}>{t('welcomeMessageChat250808')}</div>
         <ChatInput sessionId={null} />
         {isMobile ? <div className={styles.caveat}>{t('contentCaveat')}</div> : null}

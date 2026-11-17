@@ -1,4 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
+import { mergeSessionMessages } from './mergeSession.js'
 import { toSessionSummary, type Session, type SessionSummary } from './types.js'
 
 /** IndexedDB 存储结构版本；新增或调整存储、索引时递增。 */
@@ -245,6 +246,67 @@ export const commitStaging = async (): Promise<SessionSummary[]> => {
 }
 
 /** 本地存储失败不打断对话，只在控制台留痕 */
+/**
+ * 合并提交：保留现有会话与原件，只写入暂存里本地还没有的记录。
+ * 与 commitStaging 的唯一区别是不清空正式存储：会话按 id 判重，
+ * 原件按文件 id 判重，重复的一律以本地已有数据为准（不覆盖用户手上的原件）。
+ * 无论成功失败，暂存都会清空，避免下次导入拿到上次的残留。
+ */
+export const mergeStaging = async (): Promise<{
+  added: number
+  updated: number
+  skipped: number
+}> => {
+  let added = 0
+  let updated = 0
+  let skipped = 0
+  const tx = (await getDB()).transaction(
+    ['sessions', 'sessionSummaries', 'files', 'sessionsStaging', 'filesStaging'],
+    'readwrite'
+  )
+  try {
+    const sessions = tx.objectStore('sessions')
+    const summaries = tx.objectStore('sessionSummaries')
+    const sessionsStaging = tx.objectStore('sessionsStaging')
+    for (let cursor = await sessionsStaging.openCursor(); cursor; cursor = await cursor.continue()) {
+      const session = cursor.value
+      const local = await sessions.get(session.id)
+      if (local) {
+        // 同 id 说明两台设备用过同一个会话，按消息 id 求并集，把新消息补进来。
+        const merged = mergeSessionMessages(local, session)
+        if (!merged) {
+          skipped += 1
+          continue
+        }
+        await sessions.put(merged)
+        await summaries.put(storedSummary(merged))
+        updated += 1
+        continue
+      }
+      await sessions.put(session)
+      await summaries.put(storedSummary(session))
+      added += 1
+    }
+    const files = tx.objectStore('files')
+    const filesStaging = tx.objectStore('filesStaging')
+    for (let cursor = await filesStaging.openCursor(); cursor; cursor = await cursor.continue()) {
+      // 同 id 原件已存在时保留本地那份，归档里的副本直接丢弃。
+      if ((await files.getKey(cursor.value.id)) !== undefined) {
+        continue
+      }
+      await files.put(cursor.value)
+    }
+    await sessionsStaging.clear()
+    await filesStaging.clear()
+    await tx.done
+  } catch (error) {
+    // 同步抛出的错误不会自动回滚，需显式中止，避免只移入一部分会话。
+    abortTransaction(tx)
+    throw error
+  }
+  return { added, updated, skipped }
+}
+
 export const reportStorageError = (action: string) => (error: unknown) => {
   // eslint-disable-next-line no-console
   console.error(`[storage] ${action} failed`, error)

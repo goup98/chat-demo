@@ -6,6 +6,9 @@ import { extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/er
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
 import { useSettings } from '../settings.js'
 import { appendBranch, getVisibleMessages, normalizeSession, selectVersion } from './branches.js'
+import { deleteSession as remoteDeleteSession, putSession as remotePutSession } from './remote.js'
+import { syncFromRemote } from './sync.js'
+import { autoReadAloud } from '../speech/readAloud.js'
 import * as db from './db.js'
 import {
   clearAllDrafts,
@@ -73,6 +76,19 @@ type ChatState = {
   activeId: string | null
   /** 正在生成回复的会话 */
   streaming: Record<string, AbortController>
+  /**
+   * 云同步状态。off：后端不可用（比如纯静态部署）；
+   * syncing：正在拉取；ready：已与服务端一致；error：同步失败，附原因。
+   */
+  sync: {
+    state: 'off' | 'syncing' | 'ready' | 'error'
+    at: number
+    message?: string
+    /** 服务端回报的数据归属账号；前端只显示，不参与请求 */
+    owner?: string
+    /** 本轮没推完、留给下次同步的会话数 */
+    pending?: number
+  }
 }
 
 export const useChatStore = create<ChatState>(() => ({
@@ -85,6 +101,7 @@ export const useChatStore = create<ChatState>(() => ({
   sessionSaveErrors: {},
   activeId: null,
   streaming: {},
+  sync: { state: 'off', at: 0 },
 }))
 
 const { getState: get, setState: set } = useChatStore
@@ -179,6 +196,34 @@ const updateReply = (sessionId: string, reply: AssistantMessage) =>
     ),
   }))
 
+/**
+ * 云同步推送的防抖定时器。
+ * 流式生成期间 persist 调用很密（每个增量都可能落一次），
+ * 攒 2 秒再推一次，避免把接口打爆，也让「刚停止生成」的那一版能被推上去。
+ */
+const remotePushTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+const scheduleRemotePush = (sessionId: string) => {
+  const timer = remotePushTimers.get(sessionId)
+  if (timer) {
+    clearTimeout(timer)
+  }
+  remotePushTimers.set(
+    sessionId,
+    setTimeout(() => {
+      remotePushTimers.delete(sessionId)
+      const session = getSession(sessionId)
+      if (!session) {
+        return
+      }
+      void remotePutSession(session).catch(() => {
+        // 推失败不弹错也不阻塞界面：这个会话下次保存时会再推一遍，
+        // 真正需要用户知道的服务端问题由「立即同步」按钮暴露。
+      })
+    }, 2000)
+  )
+}
+
 const persist = (sessionId: string) => {
   const session = getSession(sessionId)
   if (session) {
@@ -205,6 +250,7 @@ const persist = (sessionId: string) => {
             ),
           }))
           trimSessionCache()
+          scheduleRemotePush(sessionId)
         }
       })
       .catch((error: unknown) => {
@@ -288,6 +334,55 @@ const settleInterrupted = (session: Session): Session => {
   }
 }
 
+/**
+ * 后台与云端对齐。本地 IndexedDB 先渲染出来，云端同步放后台，
+ * 所以首屏不受网络影响；同步结果会刷新会话列表，被合并过的会话
+ * 从内存缓存里剔除，下次打开时从库里读最新的。
+ */
+export const syncInBackground = async (): Promise<void> => {
+  if (get().sync.state === 'syncing' || get().importingHistory) {
+    return
+  }
+  set((state) => ({ sync: { ...state.sync, state: 'syncing' } }))
+  try {
+    const result = await syncFromRemote()
+    // 被改过的会话必须失效，否则界面还拿旧的内存副本
+    for (const id of result.touched) {
+      if (get().activeId === id) {
+        continue
+      }
+      sessionLoads.delete(id)
+    }
+    const summaries = await db.loadSessionSummaries()
+    set((state) => {
+      const next: Partial<ChatState> = {
+        sessions: sortSessions(summaries),
+        sync: { state: 'ready', at: Date.now(), owner: result.owner, pending: result.pendingPush },
+      }
+      // 当前会话被补进消息时，重新读一次，让用户马上看到新内容
+      if (state.activeId && result.touched.includes(state.activeId)) {
+        next.sessionCache = Object.fromEntries(
+          Object.entries(state.sessionCache).filter(([key]) => key !== state.activeId)
+        )
+      }
+      return next
+    })
+    if (get().activeId && result.touched.includes(get().activeId!)) {
+      void ensureSessionLoaded(get().activeId!)
+    }
+  } catch (error) {
+    set({
+      sync: {
+        state: 'error',
+        at: Date.now(),
+        message: error instanceof Error ? error.message : String(error),
+        owner: get().sync.owner,
+        pending: get().sync.pending,
+      },
+    })
+  }
+}
+
 export const initChat = (): Promise<void> => {
   if (get().ready) {
     return Promise.resolve()
@@ -302,6 +397,8 @@ export const initChat = (): Promise<void> => {
       const summaries = await db.loadSessionSummaries()
       if (epoch === historyEpoch) {
         set({ ready: true, sessions: sortSessions(summaries) })
+        // 本地数据先上屏，云端同步不阻塞首屏
+        void syncInBackground()
       }
     } catch (error) {
       if (epoch === historyEpoch) {
@@ -440,6 +537,50 @@ export const replaceHistory = async (write: () => Promise<void>): Promise<number
   }
 }
 
+/**
+ * 合并导入：流程与 replaceHistory 相同的串行 + 暂存校验，区别是不清空本地会话，
+ * 只把暂存里没重复过的会话并进来。当前打开会话、已加载的详情缓存与草稿都保持不动，
+ * 用户不会因为导入而丢失正在看的内容。返回新增与跳过的数量。
+ */
+export const mergeHistory = async (
+  write: () => Promise<void>
+): Promise<{ added: number; updated: number; skipped: number }> => {
+  if (get().importingHistory) {
+    throw new Error('History replacement is already in progress')
+  }
+  set({ importingHistory: true })
+  try {
+    // 导入期间不能再生成回答，否则回答会被并进一个正在被写入的会话。
+    for (const controller of Object.values(get().streaming)) {
+      controller.abort()
+    }
+    await Promise.all(deletionTasks)
+    sessionLoads.clear()
+    await waitForIdle()
+    await db.clearStaging()
+    let result: { added: number; updated: number; skipped: number }
+    try {
+      await write()
+      result = await db.mergeStaging()
+    } catch (error) {
+      await db.clearStaging().catch(db.reportStorageError('clear unfinished history merge'))
+      throw error
+    }
+    // 新增会话要出现在列表里：重读摘要；详情缓存保留，已打开的会话不会重新加载。
+    const summaries = await db.loadSessionSummaries()
+    set({
+      ready: true,
+      initError: false,
+      sessions: sortSessions(summaries),
+      sessionSaveErrors: {},
+    })
+    return result
+  } finally {
+    set({ importingHistory: false })
+    retrySaveSessions()
+  }
+}
+
 export const newChat = () => {
   if (!get().importingHistory) {
     set({ activeId: null })
@@ -501,6 +642,9 @@ const removeSessionData = async (id: string): Promise<boolean> => {
       return false
     }
     await db.deleteSession(id)
+    // 云端删除失败不阻塞本地删除：索引留着也无害，下次同步按 updatedAt 判断时
+    // 会被本地缺失的情况重新拉回来，用户还能再删一次。
+    void remoteDeleteSession(id).catch(() => {})
     if (epoch !== historyEpoch) {
       return true
     }
@@ -1090,5 +1234,19 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       ),
     }))
     persist(sessionId)
+    // 自动朗读这条回复（顶栏喇叭开关开着才生效）。
+    // 朗读纯属附加功能，这里任何异常都不能往上冒：store 的 finally 抛错会让
+    // streaming 状态卡住，整个会话就再也发不出消息了。
+    try {
+      if (reply.status === 'done' || reply.status === 'stopped') {
+        const spoken = reply.blocks
+          .filter((block) => block.type === 'text')
+          .map((block) => block.text)
+          .join('\n')
+        autoReadAloud(reply.id, spoken)
+      }
+    } catch {
+      // 忽略：朗读不可用不影响对话
+    }
   }
 }
