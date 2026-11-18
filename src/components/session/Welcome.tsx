@@ -4,6 +4,16 @@ import { ChatInput } from '../chatInput/ChatInput.js'
 import { MobileHeader } from './MobileHeader.js'
 import styles from './Welcome.module.css'
 
+/**
+ * 版本标识。
+ * 页面这边是构建时间；App 版本由 APK 写进 User-Agent（... DeepSeekChat/2.0），
+ * 只有在 WebView 里才读得到。用户分不清自己装的是哪一版，显示出来省得来回问。
+ */
+const buildLabel = () => {
+  const app = navigator.userAgent.match(/DeepSeekChat\/([\d.]+)/)
+  return `${app ? `App ${app[1]}` : '浏览器'} · 页面 ${__BUILD_ID__}`
+}
+
 /** 新对话：问候语 + 输入框。桌面端居中；移动端输入框吸底 */
 export const Welcome = () => {
   const t = useTranslate()
@@ -18,6 +28,7 @@ export const Welcome = () => {
         <div className={styles.greeting}>{t('welcomeMessageChat250808')}</div>
         <ChatInput sessionId={null} />
         {isMobile ? <div className={styles.caveat}>{t('contentCaveat')}</div> : null}
+        <div className={styles.buildId}>{buildLabel()}</div>
       </div>
     </div>
   )

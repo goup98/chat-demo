@@ -80,7 +80,13 @@ export const createConfig = ({
       scriptLoading: 'defer',
       meta: { 'application-version': version },
     }),
-    new rspack.DefinePlugin({ __API_ORIGIN__: JSON.stringify(apiOrigin) }),
+    new rspack.DefinePlugin({
+      __API_ORIGIN__: JSON.stringify(apiOrigin),
+      // 构建时间 + commit 短号写进页面。用户分不清自己装的是哪一版，有了这行
+      // 就能对着时间确认「我看到的确实是刚部署的那次构建」。
+      // 注意用本地时间，不是 toISOString —— 那个是 UTC，会和实际差 8 小时。
+      __BUILD_ID__: JSON.stringify(buildId),
+    }),
     new rspack.CopyRspackPlugin({
       patterns: [
         { from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' },
@@ -94,4 +100,19 @@ export const createConfig = ({
 })
 
 // eslint-disable-next-line import/no-default-export
+/** 构建标识：commit 短号 + 本地构建时间（CST），页面上显示用 */
+const buildId = (() => {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  const time = `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+  let commit = ''
+  try {
+    const { execSync } = require('node:child_process') as typeof import('node:child_process')
+    commit = execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim()
+  } catch {
+    // 不在 git 仓库里就只显示时间
+  }
+  return commit ? `${commit} ${time}` : time
+})()
+
 export default defineConfig(createConfig())

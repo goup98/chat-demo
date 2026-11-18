@@ -7,6 +7,8 @@ declare module '*.css' {}
 
 /** 公开 API 的地址，见 rspack.config.ts 的 createConfig */
 declare const __API_ORIGIN__: string
+/** 构建时间（rspack DefinePlugin 注入），页面上显示用，方便确认加载的是哪一版 */
+declare const __BUILD_ID__: string
 
 /** Prism 语言包通过副作用注册到全局 Prism */
 declare module 'prismjs/components/*' {}

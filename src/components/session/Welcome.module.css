@@ -85,3 +85,16 @@
     user-select: none;
   }
 }
+
+/* 版本标识：一眼看出加载的是哪次构建、装的是不是新版 App。
+   可选中复制，排查时直接贴给对面。 */
+.buildId {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-caption);
+  text-align: center;
+  opacity: 0.75;
+  user-select: text;
+  -webkit-user-select: text;
+}
