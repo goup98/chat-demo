@@ -14,6 +14,24 @@ export type VoiceInputStatus = 'idle' | 'recording' | 'transcribing'
  */
 const AVAILABLE = typeof window === 'undefined' || window.isSecureContext
 
+/** 录音失败时附带的环境信息：WebView 里缺哪一项一看就知道 */
+const envHint = () => {
+  if (typeof window === 'undefined') {
+    return ''
+  }
+  const mediaDevices = typeof navigator !== 'undefined' && !!navigator.mediaDevices
+  const gum = mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function'
+  const AudioCtx =
+    typeof window.AudioContext !== 'undefined' ||
+    typeof (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext !== 'undefined'
+  return (
+    `［secure=${String(window.isSecureContext)}` +
+    ` mediaDevices=${mediaDevices}` +
+    ` getUserMedia=${gum}` +
+    ` AudioContext=${AudioCtx}］`
+  )
+}
+
 const describeRecordingError = (error: unknown): TranslationMessage | string => {
   if (error instanceof DOMException) {
     if (error.name === 'NotAllowedError' || error.name === 'SecurityError') {
@@ -22,10 +40,10 @@ const describeRecordingError = (error: unknown): TranslationMessage | string => 
     if (error.name === 'NotFoundError') {
       return { key: 'voiceInputNoDevice' }
     }
-    return `录音失败（${error.name}）：${error.message.slice(0, 70)}`
+    return `录音失败（${error.name}）：${error.message.slice(0, 60)} ${envHint()}`
   }
   if (error instanceof Error) {
-    return `录音失败（${error.name}）：${error.message.slice(0, 70)}`
+    return `录音失败（${error.name}）：${error.message.slice(0, 60)} ${envHint()}`
   }
   // Android WebView 抛出的常常既不是 DOMException 也不是标准 Error，
   // 原来这种情况一律退回「语音识别失败，请稍后再试」，等于把真正原因吞了。
@@ -35,7 +53,7 @@ const describeRecordingError = (error: unknown): TranslationMessage | string => 
   } catch {
     raw = String(error)
   }
-  return `录音失败（未知类型 ${typeof error}）：${raw.slice(0, 70)}`
+  return `录音失败（未知类型 ${typeof error}）：${raw.slice(0, 60)} ${envHint()}`
 }
 
 /**
