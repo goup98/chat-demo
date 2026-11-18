@@ -569,6 +569,9 @@ const SyncStatus = () => {
           : t('syncStateOff')
   const parts = [
     sync.owner ? t('syncAccount', { owner: sync.owner }) : '',
+    sync.state === 'syncing' && sync.progress
+      ? t('syncProgress', { done: sync.progress.done, total: sync.progress.total })
+      : '',
     stateText,
     sync.at ? t('syncAt', { time: new Date(sync.at).toLocaleString('zh-CN') }) : '',
     sync.pending ? t('syncPending', { count: sync.pending }) : '',

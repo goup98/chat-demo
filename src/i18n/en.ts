@@ -126,6 +126,7 @@ export const en = {
   syncAt: 'Last synced {time}',
   syncNow: 'Sync now',
   syncPending: '{count} still uploading, sync again to continue',
+  syncProgress: 'Uploading {done} / {total}',
   historyImport: 'Import chats',
   historyImportConfirm: 'Replace and import',
   historyImportMerge: 'Merge import',

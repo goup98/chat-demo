@@ -26,11 +26,13 @@ export type SyncResult = {
 const BATCH = 40
 /**
  * 单轮最多上传多少个会话。
- * 首次启用同步时本地可能积压上百个会话，一次全推会让这一轮同步跑很久，
- * 而且每个会话都是独立的 R2 写 + D1 写。超出的部分留给下次同步，
- * 结果是「多刷几次页面就补齐」，而不是卡在一个巨大的请求里。
+ *
+ * 原先是硬上限 50：本地积压 2476 个会话时要手动点 50 次「立即同步」才能
+ * 补齐，代价太大。改成「一轮走完、边推边报进度」——每推完一个就回调一次，
+ * 界面能显示「已上传 X / 共 N」，用户点一次就够。
+ * 仍保留分批推进的粒度，便于将来插限速或中断。
  */
-const PUSH_LIMIT = 50
+const PUSH_CHUNK = 50
 
 /**
  * 与云端双向对齐历史会话。
@@ -45,7 +47,9 @@ const PUSH_LIMIT = 50
  * 附件说明：这里只同步会话结构，图片等原件仍留在各自的浏览器里
  * （官方导出的 ZIP 也只带图片原件，非图片附件本来就只存文件信息）。
  */
-export const syncFromRemote = async (): Promise<SyncResult> => {
+export const syncFromRemote = async (
+  onProgress?: (pushed: number, total: number) => void
+): Promise<SyncResult> => {
   const { items: index, owner } = await fetchIndexWithOwner(0)
   const local = await db.loadSessionSummaries()
   const localById = new Map(local.map((summary) => [summary.id, summary]))
@@ -104,19 +108,24 @@ export const syncFromRemote = async (): Promise<SyncResult> => {
     const remote = remoteById.get(summary.id)
     return !remote || summary.updatedAt > remote.updatedAt
   })
-  for (const summary of toPush.slice(0, PUSH_LIMIT)) {
-    const session = await db.loadSession(summary.id)
-    if (!session) {
-      continue
-    }
-    try {
-      await putSession(session)
-      result.pushed += 1
-    } catch {
-      // 单个失败不阻断整批；这个会话下次保存或下次同步会再推
+  for (let start = 0; start < toPush.length; start += PUSH_CHUNK) {
+    const chunk = toPush.slice(start, start + PUSH_CHUNK)
+    for (const summary of chunk) {
+      const session = await db.loadSession(summary.id)
+      if (!session) {
+        continue
+      }
+      try {
+        await putSession(session)
+        result.pushed += 1
+      } catch {
+        // 单个失败不阻断整批；这个会话下次保存或下次同步会再推
+      }
+      onProgress?.(result.pushed, toPush.length)
     }
   }
-  result.pendingPush = Math.max(0, toPush.length - PUSH_LIMIT)
+  // 只有推送失败（putSession 抛错）的才算遗留；成功的都已落地
+  result.pendingPush = Math.max(0, toPush.length - result.pushed)
 
   return result
 }

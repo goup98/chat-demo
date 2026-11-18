@@ -88,6 +88,8 @@ type ChatState = {
     owner?: string
     /** 本轮没推完、留给下次同步的会话数 */
     pending?: number
+    /** 上传进度：已推 / 总数。只在 syncing 时有意义 */
+    progress?: { done: number; total: number }
   }
 }
 
@@ -343,9 +345,22 @@ export const syncInBackground = async (): Promise<void> => {
   if (get().sync.state === 'syncing' || get().importingHistory) {
     return
   }
-  set((state) => ({ sync: { ...state.sync, state: 'syncing' } }))
+  set((state) => ({ sync: { ...state.sync, state: 'syncing', progress: undefined } }))
   try {
-    const result = await syncFromRemote()
+    // 首次同步可能积压几千个会话，逐个 setState 会拖慢界面，
+    // 所以每 5% 或至少每 2 秒更新一次进度。
+    let lastAt = 0
+    let lastDone = -1
+    const result = await syncFromRemote((pushed, total) => {
+      const now = Date.now()
+      const step = Math.max(1, Math.floor(total / 20))
+      if (now - lastAt < 2000 && pushed - lastDone < step && pushed !== total) {
+        return
+      }
+      lastAt = now
+      lastDone = pushed
+      set((state) => ({ sync: { ...state.sync, progress: { done: pushed, total } } }))
+    })
     // 被改过的会话必须失效，否则界面还拿旧的内存副本
     for (const id of result.touched) {
       if (get().activeId === id) {
@@ -357,7 +372,7 @@ export const syncInBackground = async (): Promise<void> => {
     set((state) => {
       const next: Partial<ChatState> = {
         sessions: sortSessions(summaries),
-        sync: { state: 'ready', at: Date.now(), owner: result.owner, pending: result.pendingPush },
+        sync: { state: 'ready', at: Date.now(), owner: result.owner, pending: result.pendingPush, progress: undefined },
       }
       // 当前会话被补进消息时，重新读一次，让用户马上看到新内容
       if (state.activeId && result.touched.includes(state.activeId)) {
