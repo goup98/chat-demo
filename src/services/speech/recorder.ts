@@ -53,7 +53,16 @@ export const startRecording = async (onLimit: () => void): Promise<Recording> =>
   }
 
   try {
-    context = new AudioContext({ sampleRate: SAMPLE_RATE })
+    // 部分 Android WebView 的 AudioContext 不接受指定采样率，会抛
+    // NotSupportedError。退回设备默认值（常见 48kHz），但下面 WAV 头必须写
+    // 真实采样率 —— 否则音频被当成 16kHz 播（慢三倍、音调变低），ASR 只会
+    // 返回乱码或者干脆失败。
+    try {
+      context = new AudioContext({ sampleRate: SAMPLE_RATE })
+    } catch {
+      context = new AudioContext()
+    }
+    const rate = context.sampleRate
     source = context.createMediaStreamSource(stream)
     processor = context.createScriptProcessor(BUFFER_SIZE, 1, 1)
     // 频谱分析用：串在录音链路中间（原样透传），WebKit 不会处理未连到输出的分析节点
@@ -69,7 +78,7 @@ export const startRecording = async (onLimit: () => void): Promise<Recording> =>
       }
       chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)))
       length += BUFFER_SIZE
-      if (length >= MAX_SECONDS * SAMPLE_RATE) {
+      if (length >= MAX_SECONDS * rate) {
         limited = true
         onLimit()
       }
@@ -86,7 +95,7 @@ export const startRecording = async (onLimit: () => void): Promise<Recording> =>
     return {
       stop: async () => {
         release()
-        return length === 0 ? null : encodeWav(chunks, length)
+        return length === 0 ? null : encodeWav(chunks, length, rate)
       },
       cancel: release,
       analyser,
@@ -97,8 +106,8 @@ export const startRecording = async (onLimit: () => void): Promise<Recording> =>
   }
 }
 
-const encodeWav = (chunks: Float32Array[], length: number) => {
-  const samples = Math.min(length, MAX_SECONDS * SAMPLE_RATE)
+const encodeWav = (chunks: Float32Array[], length: number, rate: number) => {
+  const samples = Math.min(length, MAX_SECONDS * rate)
   const buffer = new ArrayBuffer(44 + samples * 2)
   const view = new DataView(buffer)
   const writeString = (offset: number, text: string) => {
@@ -113,8 +122,8 @@ const encodeWav = (chunks: Float32Array[], length: number) => {
   view.setUint32(16, 16, true)
   view.setUint16(20, 1, true) // PCM
   view.setUint16(22, 1, true) // 单声道
-  view.setUint32(24, SAMPLE_RATE, true)
-  view.setUint32(28, SAMPLE_RATE * 2, true)
+  view.setUint32(24, rate, true)
+  view.setUint32(28, rate * 2, true)
   view.setUint16(32, 2, true)
   view.setUint16(34, 16, true)
   writeString(36, 'data')

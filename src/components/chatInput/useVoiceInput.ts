@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { TranslationMessage } from '../../i18n/index.js'
+import { ApiError } from '../../services/api/client.js'
 import { transcribe } from '../../services/api/speech.js'
 import { startRecording, type Recording } from '../../services/speech/recorder.js'
 import { useSettings } from '../../services/settings.js'
@@ -21,6 +22,25 @@ const describeRecordingError = (error: unknown): TranslationMessage => {
     if (error.name === 'NotFoundError') {
       return { key: 'voiceInputNoDevice' }
     }
+  }
+  return { key: 'voiceInputFailed' }
+}
+
+/**
+ * 转写失败的详细原因。
+ * 原来只有「语音识别失败」五个字，看不出是录音没采到声音、网络断了、
+ * 还是服务端拒了这段音频 —— 手机上排查全靠猜。这里把状态码和错误名带出来。
+ */
+const describeTranscriptError = (error: unknown): TranslationMessage | string => {
+  if (error instanceof ApiError) {
+    // 有 status 说明请求真的到了服务端：401 Key 无效 / 402 余额不足 /
+    // 400 音频格式或内容被拒
+    const tag = error.status ? `HTTP ${error.status}` : error.kind
+    return `语音识别失败（${tag}）：${error.message.slice(0, 70)}`
+  }
+  if (error instanceof Error) {
+    // TypeError: Failed to fetch 多半是网络不通或被 CORS 拦了
+    return `语音识别失败（${error.name}）：${error.message.slice(0, 70)}`
   }
   return { key: 'voiceInputFailed' }
 }
@@ -84,9 +104,9 @@ export const useVoiceInput = (onText: (text: string) => void) => {
       } else {
         showToast({ key: 'voiceInputEmpty' })
       }
-    } catch {
+    } catch (error) {
       if (operationRef.current === operation && !controller?.signal.aborted) {
-        showToast({ key: 'voiceInputFailed' })
+        showToast(describeTranscriptError(error))
       }
     } finally {
       if (operationRef.current === operation) {
