@@ -555,3 +555,19 @@ export const IconVolumeOffOutline20 = () => (
     />
   </svg>
 )
+
+/**
+ * 键盘：语音模式下切回文字输入。
+ * 外框 + 三排按键点，跟本文件其余图标一样走 currentColor 填充。
+ */
+export const IconKeyboardOutline16 = () => (
+  <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M14.55 3.4c.8 0 1.45.65 1.45 1.45v6.3c0 .8-.65 1.45-1.45 1.45H1.45C.65 12.6 0 11.95 0 11.15v-6.3c0-.8.65-1.45 1.45-1.45h13.1Zm0 1.4H1.45a.05.05 0 0 0-.05.05v6.3c0 .03.02.05.05.05h13.1a.05.05 0 0 0 .05-.05v-6.3a.05.05 0 0 0-.05-.05Z"
+      fill="currentColor"
+    />
+    <path d="M2.6 5.5h1.5v1.4H2.6V5.5Zm2.6 0h1.5v1.4H5.2V5.5Zm2.6 0h1.5v1.4H7.8V5.5Zm2.6 0h1.5v1.4h-1.5V5.5Zm2.6 0h1.5v1.4h-1.5V5.5Z" fill="currentColor" />
+    <path d="M2.6 7.7h1.5v1.4H2.6V7.7Zm2.6 0h1.5v1.4H5.2V7.7Zm2.6 0h1.5v1.4H7.8V7.7Zm2.6 0h1.5v1.4h-1.5V7.7Zm2.6 0h1.5v1.4h-1.5V7.7Z" fill="currentColor" />
+    <path d="M5.2 9.9h5.6v1.4H5.2V9.9Z" fill="currentColor" />
+  </svg>
+)

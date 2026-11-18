@@ -1,7 +1,8 @@
 import clsx from 'clsx'
-import { memo, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   IconGlobeLanguageOutline14,
+  IconKeyboardOutline16,
   IconPaperclipOutline16,
   IconSendOutline16,
   IconStopFill16,
@@ -128,6 +129,10 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
 
   // 移动端录音时用频谱替代输入框内容
   const recording = voice.status === 'recording'
+  // 语音模式：输入框整体换成「按住 说话」大按钮，再点键盘图标切回打字。
+  // 官方 App 就是这个切换方式；原来只有就地录音，形态上跟文字输入没分开。
+  // 录完自动切回文字模式，转出来的字直接可以改。
+  const [voiceMode, setVoiceMode] = useState(false)
 
   // 排队、上传中或上传失败的附件都留在输入框，全部上传成功后才能发送
   const canSend = !importingHistory && !streaming && voice.status === 'idle' && draftReady
@@ -162,6 +167,40 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
       }}
     >
       <DraftAttachments items={attachments} onRetry={retryFile} onRemove={removeFile} />
+      {voiceMode ? (
+        <div className={styles.holdWrap}>
+          <button
+            type="button"
+            className={styles.holdButton}
+            disabled={!voice.available}
+            onPointerDown={(event) => {
+              if (!voice.available || voice.status !== 'idle') {
+                return
+              }
+              // 捕获指针：手指滑出按钮再松开也能正常结束
+              try {
+                event.currentTarget.setPointerCapture(event.pointerId)
+              } catch {
+                // 老内核不支持时靠 pointercancel 兜底
+              }
+              void voice.start()
+            }}
+            onPointerUp={() => {
+              void voice.stop()
+            }}
+            onPointerCancel={() => {
+              void voice.stop()
+            }}
+          >
+            {voice.status === 'transcribing'
+              ? t('holdToTalkTranscribing')
+              : recording
+                ? t('holdToTalkRelease')
+                : t('holdToTalk')}
+          </button>
+          {recording ? <Spectrum getAnalyser={voice.getAnalyser} /> : null}
+        </div>
+      ) : (
       <div className={styles.textareaWrapper}>
         <textarea
           ref={textareaRef}
@@ -199,6 +238,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
           {`${text}\n`}
         </div>
       </div>
+      )}
       <div className={styles.functionRow}>
         {/* 深度思考 / 智能搜索开关，tooltip 在按钮上方 */}
         <div ref={togglesRef} className={styles.toggles}>
@@ -228,33 +268,31 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
           </Tooltip>
         </div>
         <div className={styles.right}>
+          {voiceMode ? (
+            // 语音模式下麦克风位换成键盘：点一下回到打字
+            <IconButton
+              size="m"
+              tone="primary"
+              icon={<IconKeyboardOutline16 />}
+              tooltip={t('switchToKeyboard')}
+              onClick={() => setVoiceMode(false)}
+            />
+          ) : (
           <VoiceButton
             status={voice.status}
             disabled={!voice.available}
             seconds={voice.seconds}
             onClick={() => {
+              // 点麦克风进入语音模式：输入框整体换成「按住 说话」
               if (
                 voice.status !== 'idle' ||
                 (!useChatStore.getState().importingHistory && ensureApiKey())
               ) {
-                void voice.toggle()
+                setVoiceMode(true)
               }
-            }}
-            // 按住说话：按下即录、松手出字，跟输入框提示「发消息或按住说话」一致。
-            // 官方 App 就是这个交互，也让手机上少点一次。
-            onHoldStart={() => {
-              if (
-                voice.status === 'idle' &&
-                !useChatStore.getState().importingHistory &&
-                ensureApiKey()
-              ) {
-                void voice.start()
-              }
-            }}
-            onHoldEnd={() => {
-              void voice.stop()
             }}
           />
+          )}
           <IconButton
             size="m"
             tone="primary"

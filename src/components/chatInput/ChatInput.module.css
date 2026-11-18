@@ -330,3 +330,40 @@
     cursor: not-allowed;
   }
 }
+
+/* 语音模式：输入框整块换成「按住 说话」。
+   高度跟 textarea 对齐（两行），这样切换时输入区不会跳一下。 */
+.holdWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.holdButton {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: calc(var(--line-height) * 2 + var(--input-padding-top));
+  border: none;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-skeleton);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  /* 长按录音时禁止选中文字和页面滚动，否则 pointerup 可能收不到 */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.holdButton:active:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.holdButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
