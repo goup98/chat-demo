@@ -42,7 +42,16 @@ const describeTranscriptError = (error: unknown): TranslationMessage | string =>
     // TypeError: Failed to fetch 多半是网络不通或被 CORS 拦了
     return `语音识别失败（${error.name}）：${error.message.slice(0, 70)}`
   }
-  return { key: 'voiceInputFailed' }
+  // 走到这里说明抛出来的根本不是 Error 对象（某些 WebView 会这样）。
+  // 原来这种情况直接退回「请稍后再试」，等于什么都没告诉用户 ——
+  // 现在把原始值硬转成字符串吐出来，至少能看出是啥。
+  let raw = ''
+  try {
+    raw = typeof error === 'string' ? error : JSON.stringify(error) ?? String(error)
+  } catch {
+    raw = String(error)
+  }
+  return `语音识别失败（未知类型 ${typeof error}）：${raw.slice(0, 70)}`
 }
 
 /**
