@@ -1,0 +1,105 @@
+name: Deploy to R2
+
+# 为什么这个工作流放在 chat-demo（公开仓库）而不是站点仓库：
+# 站点仓库 goup98/gov-dept-duties 是私有仓库，Actions 分钟数计入 2000/月 的
+# 免费额度；chat-demo 是公开仓库，Actions 完全不计费。chat/ 是 chat-demo 的
+# 构建产物，构建和上传都应该留在这里，不该去占用私有仓库的额度。
+#
+# 产物推到 R2 的 chat/ 前缀，线上地址 https://stargoup.space/chat/
+# 该前缀由 Worker 用 Basic Auth 保护，和站点其他页面同一套密码。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-r2
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.6.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT_URL }}
+        run: |
+          set -euo pipefail
+          B="s3://${{ secrets.R2_BUCKET }}/chat/"
+          ep="$R2_ENDPOINT"
+
+          # index.html 必须无条件覆盖：每次构建后它只是把 hash 引用换一行
+          # （main.xxxx.js），长度经常一模一样，aws s3 sync 按「大小+时间」
+          # 判定就会跳过，结果新 JS 传上去了、index.html 还指着旧的。
+          aws s3 cp dist/index.html "${B}index.html" \
+            --endpoint-url "$ep" \
+            --content-type "text/html; charset=utf-8" \
+            --cache-control "public, max-age=60, must-revalidate" --no-progress
+
+          # 各扩展名分别 sync，因为 CLI 的 --content-type 是全局的，
+          # 没法在一次调用里按文件区分。
+          sync_ext() {
+            local pat="$1" ct="$2"
+            aws s3 sync dist/ "$B" --endpoint-url "$ep" \
+              --exclude "*" --include "$pat" \
+              --content-type "$ct" --no-progress
+          }
+
+          sync_ext "*.html"  "text/html; charset=utf-8"
+          sync_ext "*.js"    "application/javascript; charset=utf-8"
+          sync_ext "*.css"   "text/css; charset=utf-8"
+          sync_ext "*.json"  "application/json; charset=utf-8"
+          sync_ext "*.woff2" "font/woff2"
+          sync_ext "*.woff"  "font/woff"
+          sync_ext "*.ttf"   "font/ttf"
+          sync_ext "*.png"   "image/png"
+          sync_ext "*.ico"   "image/x-icon"
+          sync_ext "*.svg"   "image/svg+xml"
+          sync_ext "*.webmanifest" "application/manifest+json"
+
+      - name: Verify deployed version
+        env:
+          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # 刚传完就读一次，确认 index.html 引用的 JS 确实在线上能取到，
+          # 避免「传上去了但引用的是旧文件」这种静默失败。
+          html=$(curl -fsS -u ":$SITE_PASSWORD" --max-time 30 https://stargoup.space/chat/ || true)
+          if [ -z "$html" ]; then
+            echo "::error::读不到 /chat/，线上可能没生效"
+            exit 1
+          fi
+          js=$(printf '%s' "$html" | grep -o 'main\.[0-9a-f]*\.js' | head -1 || true)
+          echo "index.html 引用: $js"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -u ":$SITE_PASSWORD" --max-time 30 \
+                 "https://stargoup.space/chat/static/js/$js" || true)
+          echo "该 JS 的 HTTP 状态: $code"
+          [ "$code" = "200" ] || { echo "::error::引用的 JS 取不到（$code）"; exit 1; }
