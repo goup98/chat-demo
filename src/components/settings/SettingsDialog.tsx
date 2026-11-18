@@ -524,7 +524,13 @@ const ImportHistory = ({
           <input
             ref={inputRef}
             type="file"
-            accept=".zip,application/zip,application/x-zip-compressed"
+            // 不按 MIME 收紧过滤。安卓各文件管理器对 zip 的 MIME 报得很乱
+            // （application/octet-stream、application/x-zip、甚至空），
+            // 严格 accept 会让选择器里一个可选的文件都没有 —— 用户点了「上传」
+            // 看到空空如也，就以为按钮坏了。真正的格式校验在选完之后的
+            // checkArchiveFormat 里做，那里会给出「文件无法识别」的明确提示，
+            // 所以这里放开反而更友好。
+            accept=".zip,application/zip,application/x-zip-compressed,application/octet-stream"
             hidden
             onChange={(event) => {
               const file = event.target.files?.[0]
