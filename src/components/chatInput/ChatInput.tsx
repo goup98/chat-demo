@@ -102,6 +102,11 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   )
   const dragging = useFileDrop(acceptFiles)
 
+  // 语音模式：输入框整体换成「按住 说话」大按钮，再点键盘图标切回打字。
+  // 官方 App 就是这个切换方式；原来只有就地录音，形态上跟文字输入没分开。
+  // 必须定义在 useVoiceInput 之前 —— 转写回调里要切回文字模式。
+  const [voiceMode, setVoiceMode] = useState(false)
+
   /** 转写结果插入到光标处，并把光标移到插入内容之后 */
   const voice = useVoiceInput((transcript) => {
     const textarea = textareaRef.current
@@ -109,9 +114,15 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
     const start = textarea?.selectionStart ?? current.length
     const end = textarea?.selectionEnd ?? current.length
     setText(current.slice(0, start) + transcript + current.slice(end))
+    // 转写完切回文字模式：否则输入框还是「按住 说话」那个大按钮，
+    // 文字虽然写进了状态却没地方显示，用户看到的就是「说了但没反应」。
+    setVoiceMode(false)
     requestAnimationFrame(() => {
-      textarea?.focus({ preventScroll: true })
-      textarea?.setSelectionRange(start + transcript.length, start + transcript.length)
+      textareaRef.current?.focus({ preventScroll: true })
+      textareaRef.current?.setSelectionRange(
+        start + transcript.length,
+        start + transcript.length
+      )
     })
   })
 
@@ -129,10 +140,6 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
 
   // 移动端录音时用频谱替代输入框内容
   const recording = voice.status === 'recording'
-  // 语音模式：输入框整体换成「按住 说话」大按钮，再点键盘图标切回打字。
-  // 官方 App 就是这个切换方式；原来只有就地录音，形态上跟文字输入没分开。
-  // 录完自动切回文字模式，转出来的字直接可以改。
-  const [voiceMode, setVoiceMode] = useState(false)
 
   // 排队、上传中或上传失败的附件都留在输入框，全部上传成功后才能发送
   const canSend = !importingHistory && !streaming && voice.status === 'idle' && draftReady
