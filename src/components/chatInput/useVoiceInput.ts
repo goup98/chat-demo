@@ -14,7 +14,7 @@ export type VoiceInputStatus = 'idle' | 'recording' | 'transcribing'
  */
 const AVAILABLE = typeof window === 'undefined' || window.isSecureContext
 
-const describeRecordingError = (error: unknown): TranslationMessage => {
+const describeRecordingError = (error: unknown): TranslationMessage | string => {
   if (error instanceof DOMException) {
     if (error.name === 'NotAllowedError' || error.name === 'SecurityError') {
       return { key: 'voiceInputPermissionDenied' }
@@ -22,8 +22,20 @@ const describeRecordingError = (error: unknown): TranslationMessage => {
     if (error.name === 'NotFoundError') {
       return { key: 'voiceInputNoDevice' }
     }
+    return `录音失败（${error.name}）：${error.message.slice(0, 70)}`
   }
-  return { key: 'voiceInputFailed' }
+  if (error instanceof Error) {
+    return `录音失败（${error.name}）：${error.message.slice(0, 70)}`
+  }
+  // Android WebView 抛出的常常既不是 DOMException 也不是标准 Error，
+  // 原来这种情况一律退回「语音识别失败，请稍后再试」，等于把真正原因吞了。
+  let raw = ''
+  try {
+    raw = typeof error === 'string' ? error : JSON.stringify(error) ?? String(error)
+  } catch {
+    raw = String(error)
+  }
+  return `录音失败（未知类型 ${typeof error}）：${raw.slice(0, 70)}`
 }
 
 /**
