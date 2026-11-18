@@ -474,8 +474,12 @@ const useHistoryImport = () => {
         const count = await importHistory(file)
         setStatus({ key: count === 1 ? 'historyImportedOne' : 'historyImported', params: { count } })
       }
-    } catch {
-      setStatus({ key: 'historyImportFailed', error: true })
+    } catch (error) {
+      // 配额不足和格式错误是两回事：以前都落到「文件格式错误」，
+      // 用户会以为是文件坏了反复重导，而真正要处理的是存储空间。
+      const name = (error as Error | undefined)?.name ?? ''
+      const quota = name === 'QuotaExceededError' || /quota/i.test(String(error))
+      setStatus({ key: quota ? 'historyImportNoSpace' : 'historyImportFailed', error: true })
     } finally {
       importing.current = false
       setBusy(false)

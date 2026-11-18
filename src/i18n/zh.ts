@@ -137,6 +137,8 @@ export const zh = {
   historyImported: '已导入 {count} 个对话',
   historyImportFailed:
     '文件导入失败，可能是文件格式错误或使用了旧版的对话导出 ZIP 文件，请前往 DeepSeek 重新导出历史对话文件后再次导入。',
+  historyImportNoSpace:
+    '浏览器存储空间不够，导入中断了。这个备份解压后有几百 MB，本浏览器只分到有限的存储额度 —— 可以先删掉一些本地对话再导入，或者用「覆盖导入」只保留这个备份（会清空现有记录），也可以把备份拆小后再分批导入。',
   historyExportFailed: '导出失败：{message}',
   exportChatLabel: '导出当前对话',
   exportChatDescription: '把当前打开的对话导出为 Markdown 文件，含正文、思考过程与附件名称，不含 API Key。',
