@@ -174,7 +174,7 @@ export const en = {
   thinkingSwitch: 'DeepThink',
   deactivatedSearchTooltip: 'Search the web when necessary',
   search: 'Search',
-  uploadFile: 'Upload files',
+  uploadFile: 'Add attachment',
   chatInputStopButtonTooltip: 'Stop',
   uploadMaxMBSize: 'File exceeds the size limit ({size} MB). Please adjust and try again.',
   uploadMaxFiles: 'You can upload up to {count} files',
