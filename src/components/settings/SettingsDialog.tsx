@@ -461,7 +461,8 @@ const useHistoryImport = () => {
     importing.current = true
     setFile(null)
     setBusy(true)
-    setStatus(null)
+    // 解析大备份时界面会长时间静止，先给个「正在导入」，否则用户以为按钮没反应
+    setStatus({ key: 'historyImporting' })
     try {
       if (mode === 'merge') {
         const { added, updated, skipped } = await importHistoryMerged(file)
