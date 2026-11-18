@@ -59,39 +59,87 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT_URL }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
           set -euo pipefail
-          B="s3://${{ secrets.R2_BUCKET }}/chat/"
+          B="s3://$R2_BUCKET/chat/"
           ep="$R2_ENDPOINT"
 
-          # index.html 必须无条件覆盖：每次构建后它只是把 hash 引用换一行
-          # （main.xxxx.js），长度经常一模一样，aws s3 sync 按「大小+时间」
-          # 判定就会跳过，结果新 JS 传上去了、index.html 还指着旧的。
-          aws s3 cp dist/index.html "${B}index.html" \
-            --endpoint-url "$ep" \
-            --content-type "text/html; charset=utf-8" \
-            --cache-control "public, max-age=60, must-revalidate" --no-progress
+          # ── 为什么不用 aws s3 sync ──
+          # sync 靠「大小 + 修改时间」判断是否上传，而 CI 里 checkout/build 出来的
+          # 文件 mtime 全是新的，所以每次 162 个文件统统被判定「已变更」。之前为了
+          # 给不同扩展名设 content-type 跑了 11 次独立 sync，等于把同一份目录完整
+          # 比对 11 遍，实测 34 秒 —— 而真正变化的文件只有几个。
+          #
+          # rspack 的产物名自带内容哈希（main.b0f02645.js），文件名相同即内容相同。
+          # 所以正确做法是拿远端已有文件名做差集：一次 list 就够，没改动的不碰。
+          echo "列出远端已有对象…"
+          aws s3 ls "${B}" --recursive --endpoint-url "$ep" \
+            | awk '{print $4}' | sed "s|^chat/||" | grep -v '/$' | sort > /tmp/remote.txt || true
+          echo "  远端 $(wc -l < /tmp/remote.txt) 个对象"
 
-          # 各扩展名分别 sync，因为 CLI 的 --content-type 是全局的，
-          # 没法在一次调用里按文件区分。
-          sync_ext() {
-            local pat="$1" ct="$2"
-            aws s3 sync dist/ "$B" --endpoint-url "$ep" \
-              --exclude "*" --include "$pat" \
-              --content-type "$ct" --no-progress
+          ( cd dist && find . -type f | sed 's|^\./||' | sort ) > /tmp/local.txt
+          echo "  本地 $(wc -l < /tmp/local.txt) 个文件"
+
+          # 差集：本地有、远端没有的 = 新哈希产物，必须传
+          comm -23 /tmp/local.txt /tmp/remote.txt > /tmp/upload.txt
+
+          # 名字固定但内容会变的三类文件必须无条件重传。它们的文件名里没有哈希，
+          # 远端总是「已存在」，光靠差集会永远不更新：
+          #   index.html   每次构建都只换一行 hash 引用，长度经常一模一样
+          #   manifest.json / sw.js  PWA 元信息，改了要立刻生效
+          for f in index.html manifest.json sw.js; do
+            [ -f "dist/$f" ] && echo "$f" >> /tmp/upload.txt
+          done
+
+          sort -u /tmp/upload.txt -o /tmp/upload.txt
+          echo "  需要上传 $(wc -l < /tmp/upload.txt) 个（其中固定名文件 3 个）"
+          echo "  跳过 $(comm -12 /tmp/local.txt /tmp/remote.txt | wc -l) 个未改动文件"
+
+          # 并发上传：每次 aws s3 cp 约 1 秒（开销主要在起进程 + TLS 握手），
+          # 串行传几十个就要几十秒，8 路并发能把这一段压到几秒。
+          ct_of() {
+            case "$1" in
+              *.html)        echo "text/html; charset=utf-8" ;;
+              *.js)          echo "application/javascript; charset=utf-8" ;;
+              *.css)         echo "text/css; charset=utf-8" ;;
+              *.json)        echo "application/json; charset=utf-8" ;;
+              *.webmanifest) echo "application/manifest+json" ;;
+              *.woff2)       echo "font/woff2" ;;
+              *.woff)        echo "font/woff" ;;
+              *.ttf)         echo "font/ttf" ;;
+              *.png)         echo "image/png" ;;
+              *.ico)         echo "image/x-icon" ;;
+              *.svg)         echo "image/svg+xml" ;;
+              *)             echo "application/octet-stream" ;;
+            esac
           }
+          export -f ct_of
 
-          sync_ext "*.html"  "text/html; charset=utf-8"
-          sync_ext "*.js"    "application/javascript; charset=utf-8"
-          sync_ext "*.css"   "text/css; charset=utf-8"
-          sync_ext "*.json"  "application/json; charset=utf-8"
-          sync_ext "*.woff2" "font/woff2"
-          sync_ext "*.woff"  "font/woff"
-          sync_ext "*.ttf"   "font/ttf"
-          sync_ext "*.png"   "image/png"
-          sync_ext "*.ico"   "image/x-icon"
-          sync_ext "*.svg"   "image/svg+xml"
-          sync_ext "*.webmanifest" "application/manifest+json"
+          upload_one() {
+            local rel="$1"
+            local extra=()
+            # 固定名文件的缓存策略单独指定；带哈希的可以直接长缓存
+            case "$rel" in
+              index.html|manifest.json|sw.js)
+                extra=(--cache-control "public, max-age=60, must-revalidate") ;;
+              *)
+                extra=(--cache-control "public, max-age=31536000, immutable") ;;
+            esac
+            aws s3 cp "dist/$rel" "s3://$R2_BUCKET/chat/$rel" \
+              --endpoint-url "$ep" \
+              --content-type "$(ct_of "$rel")" \
+              "${extra[@]}" --no-progress --quiet
+          }
+          export -f upload_one
+          export R2_BUCKET ep
+
+          if [ -s /tmp/upload.txt ]; then
+            xargs -a /tmp/upload.txt -P 8 -I{} bash -c 'upload_one "$@"' _ {}
+            echo "上传完成"
+          else
+            echo "没有需要上传的文件"
+          fi
 
       - name: Verify deployed version
         env:
