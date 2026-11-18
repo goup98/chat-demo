@@ -58,14 +58,20 @@
   }
 
   .logo {
-    width: 60px;
-    height: 60px;
-    margin-bottom: 18px;
+    width: 64px;
+    height: 64px;
+    flex-shrink: 0;
+    /* 上边 auto：吃掉顶栏到 logo 之间的剩余空间。
+       移动端 .welcome 是 flex-end 布局（输入框吸底），不写这个
+       logo 会紧贴顶栏，跟居中的欢迎语之间空一大片。 */
+    margin: auto 0 20px;
   }
 
   .greeting {
     flex-shrink: 0;
-    margin: auto 0;
+    /* 下边 auto：吃掉欢迎语到输入框之间的剩余空间，跟上面的 auto 各分一半，
+       这样「logo + 欢迎语」作为一个整体落在屏幕中部偏上，跟官方一致 */
+    margin: 0 0 auto;
   }
 
   .caveat {

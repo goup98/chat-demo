@@ -1,4 +1,5 @@
 import clsx from 'clsx'
+import { useRef } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { IconMicFill16, IconMicOutline16 } from '../base/icons.js'
 import { Tooltip } from '../base/Tooltip.js'
@@ -16,6 +17,8 @@ export const VoiceButton = ({
   disabled = false,
   seconds,
   onClick,
+  onHoldStart,
+  onHoldEnd,
 }: {
   status: VoiceInputStatus
   /** 非安全上下文中按钮置灰，tooltip 提示录音需要 HTTPS */
@@ -23,8 +26,15 @@ export const VoiceButton = ({
   /** 本次录音已录秒数，录音中显示在按钮左侧 */
   seconds: number
   onClick: () => void
+  /** 按住说话：按下即开始录音（未传则退化为点击切换） */
+  onHoldStart?: () => void
+  /** 按住说话：松手结束并转写 */
+  onHoldEnd?: () => void
 }) => {
   const t = useTranslate()
+  // pointerdown 已经处理过一次的话，浏览器随后补发的 click 要忽略，
+  // 否则松手瞬间会「结束录音 → 又开始录音」，按钮永远停在录音中
+  const holdHandled = useRef(false)
   const recording = status === 'recording'
 
   const label = disabled
@@ -49,7 +59,35 @@ export const VoiceButton = ({
           aria-label={label}
           aria-pressed={recording}
           aria-disabled={disabled}
+          onPointerDown={(event) => {
+            if (disabled || !onHoldStart) {
+              return
+            }
+            holdHandled.current = true
+            // 捕获指针：手指滑出按钮再松开时仍能收到 pointerup，
+            // 不捕获的话会一直停在录音状态
+            try {
+              event.currentTarget.setPointerCapture(event.pointerId)
+            } catch {
+              // 老内核不支持捕获时忽略，靠 pointercancel 兜底
+            }
+            onHoldStart()
+          }}
+          onPointerUp={() => {
+            if (onHoldEnd) {
+              onHoldEnd()
+            }
+          }}
+          onPointerCancel={() => {
+            if (onHoldEnd) {
+              onHoldEnd()
+            }
+          }}
           onClick={() => {
+            if (holdHandled.current) {
+              holdHandled.current = false
+              return
+            }
             if (!disabled) {
               onClick()
             }

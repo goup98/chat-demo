@@ -240,6 +240,20 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
                 void voice.toggle()
               }
             }}
+            // 按住说话：按下即录、松手出字，跟输入框提示「发消息或按住说话」一致。
+            // 官方 App 就是这个交互，也让手机上少点一次。
+            onHoldStart={() => {
+              if (
+                voice.status === 'idle' &&
+                !useChatStore.getState().importingHistory &&
+                ensureApiKey()
+              ) {
+                void voice.start()
+              }
+            }}
+            onHoldEnd={() => {
+              void voice.stop()
+            }}
           />
           <IconButton
             size="m"
@@ -272,7 +286,9 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
             >
               <IconStopFill16 />
             </button>
-          ) : (
+          ) : draftReady ? (
+            // 没有可发内容时整个按钮不渲染，跟官方一致（空输入框旁边只有
+            // 附件和麦克风）。原来是常驻一个灰色按钮，视觉上比原版多一块。
             <button
               type="button"
               className={clsx(styles.sendButton, !canSend && styles.disabled)}
@@ -282,7 +298,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
             >
               <IconSendOutline16 />
             </button>
-          )}
+          ) : null}
         </div>
       </div>
       {dragging ? <DragMask /> : null}
