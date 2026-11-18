@@ -47,8 +47,11 @@ const PUSH_CHUNK = 50
  * 附件说明：这里只同步会话结构，图片等原件仍留在各自的浏览器里
  * （官方导出的 ZIP 也只带图片原件，非图片附件本来就只存文件信息）。
  */
+/** 同步的两个阶段：先从云端往下拉，再把本地较新的往上推 */
+export type SyncPhase = 'pull' | 'push'
+
 export const syncFromRemote = async (
-  onProgress?: (pushed: number, total: number) => void
+  onProgress?: (phase: SyncPhase, done: number, total: number) => void
 ): Promise<SyncResult> => {
   const { items: index, owner } = await fetchIndexWithOwner(0)
   const local = await db.loadSessionSummaries()
@@ -100,6 +103,7 @@ export const syncFromRemote = async (
         result.missing += 1
       }
     }
+    onProgress?.('pull', Math.min(start + BATCH, need.length), need.length)
   }
 
   // ── 第二步：向上推。本地有、云端没有的，或本地更新的，都要传上去 ──
@@ -121,7 +125,7 @@ export const syncFromRemote = async (
       } catch {
         // 单个失败不阻断整批；这个会话下次保存或下次同步会再推
       }
-      onProgress?.(result.pushed, toPush.length)
+      onProgress?.('push', result.pushed, toPush.length)
     }
   }
   // 只有推送失败（putSession 抛错）的才算遗留；成功的都已落地

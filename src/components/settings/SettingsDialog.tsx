@@ -569,8 +569,13 @@ const SyncStatus = () => {
           : t('syncStateOff')
   const parts = [
     sync.owner ? t('syncAccount', { owner: sync.owner }) : '',
+    // 拉取和上传是两件事，进度要分开说：拉取慢通常是网络或正文体积，
+    // 上传慢是逐个 R2/D1 写入，用户知道卡在哪一步才好判断要不要等。
     sync.state === 'syncing' && sync.progress
-      ? t('syncProgress', { done: sync.progress.done, total: sync.progress.total })
+      ? t(sync.progress.phase === 'pull' ? 'syncPulling' : 'syncPushing', {
+          done: sync.progress.done,
+          total: sync.progress.total,
+        })
       : '',
     stateText,
     sync.at ? t('syncAt', { time: new Date(sync.at).toLocaleString('zh-CN') }) : '',

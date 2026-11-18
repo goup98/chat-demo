@@ -35,7 +35,31 @@ const request = async (path: string, init?: RequestInit): Promise<Response> => {
     throw new SyncError(error instanceof Error ? error.message : String(error), 0)
   }
   if (!response.ok) {
-    throw new SyncError(`sync ${response.status}`, response.status)
+    // 以前只抛 `sync 401` 这种，用户看到完全不知道发生了什么 —— 分不清是
+    // 密码问题、路径不对还是服务端崩了。现在把「哪个接口 + 状态码含义 +
+    // 服务端返回的原文」一起带出去。
+    let detail = ''
+    try {
+      detail = (await response.text()).trim().slice(0, 200)
+    } catch {
+      // 响应体读不出来就只报状态码
+    }
+    const hint =
+      response.status === 401
+        ? '需要访问密码，或密码已失效'
+        : response.status === 403
+          ? '没有权限访问该数据'
+          : response.status === 404
+            ? '接口不存在（Worker 可能未部署最新版）'
+            : response.status === 429
+              ? '请求过于频繁，稍后再试'
+              : response.status >= 500
+                ? '服务端错误'
+                : '请求失败'
+    throw new SyncError(
+      `${path} → HTTP ${response.status}（${hint}）${detail ? `：${detail}` : ''}`,
+      response.status
+    )
   }
   return response
 }

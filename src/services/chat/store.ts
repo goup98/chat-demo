@@ -88,8 +88,8 @@ type ChatState = {
     owner?: string
     /** 本轮没推完、留给下次同步的会话数 */
     pending?: number
-    /** 上传进度：已推 / 总数。只在 syncing 时有意义 */
-    progress?: { done: number; total: number }
+    /** 进度：拉取或上传，已处理 / 总数。只在 syncing 时有意义 */
+    progress?: { phase: 'pull' | 'push'; done: number; total: number }
   }
 }
 
@@ -351,15 +351,16 @@ export const syncInBackground = async (): Promise<void> => {
     // 所以每 5% 或至少每 2 秒更新一次进度。
     let lastAt = 0
     let lastDone = -1
-    const result = await syncFromRemote((pushed, total) => {
+    // 当前阶段记在 sync.progress 里，出错时据此说明是拉取还是上传失败
+    const result = await syncFromRemote((now_phase, done, total) => {
       const now = Date.now()
       const step = Math.max(1, Math.floor(total / 20))
-      if (now - lastAt < 2000 && pushed - lastDone < step && pushed !== total) {
+      if (now - lastAt < 2000 && done - lastDone < step && done !== total) {
         return
       }
       lastAt = now
-      lastDone = pushed
-      set((state) => ({ sync: { ...state.sync, progress: { done: pushed, total } } }))
+      lastDone = done
+      set((state) => ({ sync: { ...state.sync, progress: { phase: now_phase, done, total } } }))
     })
     // 被改过的会话必须失效，否则界面还拿旧的内存副本
     for (const id of result.touched) {
@@ -386,13 +387,18 @@ export const syncInBackground = async (): Promise<void> => {
       void ensureSessionLoaded(get().activeId!)
     }
   } catch (error) {
+    const raw = error instanceof Error ? error.message : String(error)
+    // 注明停在哪个阶段：拉取失败通常是密码/网络/Worker 问题，
+    // 上传失败多半是写入被拒，两者排查方向完全不同。
+    const at = get().sync.progress?.phase ?? 'pull'
     set({
       sync: {
         state: 'error',
         at: Date.now(),
-        message: error instanceof Error ? error.message : String(error),
+        message: `${at === 'pull' ? '拉取阶段' : '上传阶段'}出错：${raw}`,
         owner: get().sync.owner,
         pending: get().sync.pending,
+        progress: undefined,
       },
     })
   }

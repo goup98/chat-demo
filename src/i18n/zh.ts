@@ -122,6 +122,8 @@ export const zh = {
   syncNow: '立即同步',
   syncPending: '还有 {count} 个待上传，再点一次立即同步',
   syncProgress: '正在上传 {done} / {total}',
+  syncPulling: '正在从云端拉取 {done} / {total}',
+  syncPushing: '正在上传 {done} / {total}',
   historyImport: '导入历史对话',
   historyImportConfirm: '覆盖导入',
   historyImportConfirmTitle: '选择导入方式',
