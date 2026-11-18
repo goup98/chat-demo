@@ -1,6 +1,11 @@
 name: Deploy to R2
 
 # 为什么这个工作流放在 chat-demo（公开仓库）而不是站点仓库：
+# 分支约定：main 只跟踪官方 deepseek-ai/chat-demo，不放任何本地改动；
+# 本站的定制全部在 stargoup 分支上，本 workflow 也只监听 stargoup。
+# 同步官方更新：git fetch upstream && git checkout main && git merge --ff-only
+# upstream/main && git checkout stargoup && git rebase main
+#
 # 本仓库是公开的，而站点仓库是私有的：私有仓库的 Actions 分钟数计入免费额度，
 # 公开仓库完全不计费。chat/ 是本仓库的构建产物，构建和上传都留在这里，不该去
 # 占用私有仓库的额度。
@@ -11,7 +16,7 @@ name: Deploy to R2
 
 on:
   push:
-    branches: [main]
+    branches: [stargoup]
   workflow_dispatch:
 
 permissions:
