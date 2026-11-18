@@ -1,12 +1,13 @@
 name: Deploy to R2
 
 # 为什么这个工作流放在 chat-demo（公开仓库）而不是站点仓库：
-# 站点仓库 goup98/gov-dept-duties 是私有仓库，Actions 分钟数计入 2000/月 的
-# 免费额度；chat-demo 是公开仓库，Actions 完全不计费。chat/ 是 chat-demo 的
-# 构建产物，构建和上传都应该留在这里，不该去占用私有仓库的额度。
+# 本仓库是公开的，而站点仓库是私有的：私有仓库的 Actions 分钟数计入免费额度，
+# 公开仓库完全不计费。chat/ 是本仓库的构建产物，构建和上传都留在这里，不该去
+# 占用私有仓库的额度。
 #
-# 产物推到 R2 的 chat/ 前缀，线上地址 https://stargoup.space/chat/
-# 该前缀由 Worker 用 Basic Auth 保护，和站点其他页面同一套密码。
+# 产物推到 R2 的 chat/ 前缀，该前缀由线上 Worker 用 Basic Auth 保护，和站点
+# 其他页面同一套密码。域名与密码都不写进仓库，走 secrets（SITE_URL /
+# SITE_PASSWORD），避免公开仓库暴露站点归属。
 
 on:
   push:
@@ -88,11 +89,12 @@ jobs:
       - name: Verify deployed version
         env:
           SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+          SITE_URL: ${{ secrets.SITE_URL }}
         run: |
           set -euo pipefail
           # 刚传完就读一次，确认 index.html 引用的 JS 确实在线上能取到，
           # 避免「传上去了但引用的是旧文件」这种静默失败。
-          html=$(curl -fsS -u ":$SITE_PASSWORD" --max-time 30 https://stargoup.space/chat/ || true)
+          html=$(curl -fsS -u ":$SITE_PASSWORD" --max-time 30 "$SITE_URL/chat/" || true)
           if [ -z "$html" ]; then
             echo "::error::读不到 /chat/，线上可能没生效"
             exit 1
@@ -100,6 +102,6 @@ jobs:
           js=$(printf '%s' "$html" | grep -o 'main\.[0-9a-f]*\.js' | head -1 || true)
           echo "index.html 引用: $js"
           code=$(curl -s -o /dev/null -w '%{http_code}' -u ":$SITE_PASSWORD" --max-time 30 \
-                 "https://stargoup.space/chat/static/js/$js" || true)
+                 "$SITE_URL/chat/static/js/$js" || true)
           echo "该 JS 的 HTTP 状态: $code"
           [ "$code" = "200" ] || { echo "::error::引用的 JS 取不到（$code）"; exit 1; }
