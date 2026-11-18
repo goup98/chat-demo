@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { showToast } from '../base/toastState.js'
 import { useSettings } from '../../services/settings.js'
 
 /** 设置弹窗的分组：通用设置 / 数据管理 */
@@ -20,6 +21,10 @@ export const ensureApiKey = () => {
   if (useSettings.getState().apiKey) {
     return true
   }
+  // 只把设置窗口弹出来、不说原因的话，用户点麦克风或回形针时看到设置自己
+  // 跳出来，会以为按钮坏了。（语音转写和文件上传都要拿 Key 调接口，所以
+  // 两个按钮都卡这一关。）
+  showToast({ key: 'apiKeyRequired' })
   openSettings('data')
   return false
 }

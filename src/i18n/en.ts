@@ -194,6 +194,7 @@ export const en = {
   voiceInputEmpty: 'No speech detected',
   voiceInputLimitReached: 'Maximum recording length reached',
   voiceInputRequiresHttps: 'Voice input requires HTTPS',
+  apiKeyRequired: 'Set your API key in Settings first — voice input and file upload both call the API',
   apiKeyInvalidRetry: 'Invalid API Key. Please change it and try again.',
   insufficientBalance: 'Insufficient balance',
   rateLimited: 'Too many requests. Please try again later.',

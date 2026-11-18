@@ -186,6 +186,7 @@ export const zh = {
   voiceInputEmpty: '未识别到语音内容',
   voiceInputLimitReached: '已达到单次录音时长上限',
   voiceInputRequiresHttps: '非 HTTPS 页面无法使用语音输入',
+  apiKeyRequired: '请先在设置里填入 API Key，语音识别和文件上传都要用它调接口',
   apiKeyInvalidRetry: 'API Key 无效，请更换后重试',
   insufficientBalance: '账户余额不足',
   rateLimited: '操作过于频繁，请稍后再试',
