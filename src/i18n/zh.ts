@@ -8,6 +8,7 @@ export const zh = {
   searchingText: '搜索中…',
   searchFailedText: '搜索失败，稍后再试',
   searchNoResultText: '没有找到匹配的对话',
+  searchOpenFailedText: '打开失败，请检查网络后重试',
   untitledSession: '未命名对话',
   autoReadAloudOn: '自动朗读',
   holdToTalk: '按住 说话',

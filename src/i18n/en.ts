@@ -10,6 +10,7 @@ export const en = {
   searchingText: 'Searching…',
   searchFailedText: 'Search failed, try again later',
   searchNoResultText: 'No matching conversations',
+  searchOpenFailedText: 'Failed to open, check your network and retry',
   untitledSession: 'Untitled',
   autoReadAloudOn: 'Auto read-aloud',
   holdToTalk: 'Hold to talk',

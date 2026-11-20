@@ -4,7 +4,7 @@ import { useTranslate } from '../../i18n/index.js'
 import { IconPanelLeftOutline16, IconSettingsOutline16, NewChatIcon } from '../base/icons.js'
 import { setSiderCollapsed } from '../../services/settings.js'
 import { groupSessions } from '../../services/chat/sessionGroups.js'
-import { newChat, removeSession, selectSession, useChatStore } from '../../services/chat/store.js'
+import { newChat, openSessionById, removeSession, useChatStore } from '../../services/chat/store.js'
 import { searchSessions, type SearchHit } from '../../services/chat/remote.js'
 import type { SessionSummary } from '../../services/chat/types.js'
 import { Button } from '../base/Button.js'
@@ -153,8 +153,13 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
                   key={hit.id}
                   className={styles.searchHit}
                   onClick={() => {
-                    selectSession(hit.id)
-                    closeMobileSider()
+                    void openSessionById(hit.id).then((opened) => {
+                      if (opened) {
+                        closeMobileSider()
+                      } else {
+                        showToast({ key: 'searchOpenFailedText', type: 'error' })
+                      }
+                    })
                   }}
                 >
                   <div className={styles.searchHitTitle}>{hit.title || t('untitledSession')}</div>

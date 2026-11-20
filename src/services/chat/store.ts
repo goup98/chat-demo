@@ -6,7 +6,7 @@ import { extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/er
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
 import { useSettings } from '../settings.js'
 import { appendBranch, getVisibleMessages, normalizeSession, selectVersion } from './branches.js'
-import { deleteSession as remoteDeleteSession, putSession as remotePutSession } from './remote.js'
+import { deleteSession as remoteDeleteSession, fetchSessions, putSession as remotePutSession } from './remote.js'
 import { syncFromRemote } from './sync.js'
 import { autoReadAloud } from '../speech/readAloud.js'
 import * as db from './db.js'
@@ -616,6 +616,40 @@ export const selectSession = (id: string) => {
     void ensureSessionLoaded(id)
     trimSessionCache()
   }
+}
+
+/**
+ * 按 id 打开会话，本地没有就先去云端取这一条。
+ *
+ * 为什么需要单独一个函数：selectSession 只认 sessions 里已有的 id，不在就静默
+ * 返回。搜索结果来自服务端全文索引，命中的会话可能还没跟着全量同步落到本地
+ * （首次同步 2477 条要跑几分钟），这时点搜索结果就是点了没反应。
+ * 这里补上「单条按需拉取 → 落库 → 并入列表 → 再走正常选中流程」。
+ */
+export const openSessionById = async (id: string): Promise<boolean> => {
+  if (get().importingHistory) {
+    return false
+  }
+  if (!get().sessions.some((session) => session.id === id)) {
+    try {
+      const items = await fetchSessions([id])
+      const hit = items.find((item) => item.id === id)
+      if (!hit) {
+        return false
+      }
+      await db.saveSession(hit.session)
+      const summaries = sortSessions(await db.loadSessionSummaries())
+      set({
+        sessions: summaries,
+        sessionCache: { ...get().sessionCache, [id]: hit.session },
+      })
+    } catch {
+      // 网络失败就当作打不开，交给调用方提示
+      return false
+    }
+  }
+  selectSession(id)
+  return true
 }
 
 export const renameSession = (id: string, title: string) => {
