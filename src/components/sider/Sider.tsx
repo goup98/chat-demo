@@ -4,7 +4,8 @@ import { useTranslate } from '../../i18n/index.js'
 import { IconPanelLeftOutline16, IconSettingsOutline16, NewChatIcon } from '../base/icons.js'
 import { setSiderCollapsed } from '../../services/settings.js'
 import { groupSessions } from '../../services/chat/sessionGroups.js'
-import { newChat, removeSession, useChatStore } from '../../services/chat/store.js'
+import { newChat, removeSession, selectSession, useChatStore } from '../../services/chat/store.js'
+import { searchSessions, type SearchHit } from '../../services/chat/remote.js'
 import type { SessionSummary } from '../../services/chat/types.js'
 import { Button } from '../base/Button.js'
 import { IconButton } from '../base/IconButton.js'
@@ -15,6 +16,28 @@ import { closeMobileSider, useMobileSider } from './mobileSiderState.js'
 import { SessionItem } from './SessionItem.js'
 import styles from './Sider.module.css'
 
+/**
+ * 把服务端返回的片段渲染成节点：命中词被 << >> 包着，转成 <mark> 高亮。
+ *
+ * 用 split 保留分隔符来做，不引入 dangerouslySetInnerHTML —— 片段内容来自
+ * 用户自己的对话正文，走 HTML 注入等于在侧栏开一个 XSS 入口。
+ */
+const renderSnip = (snip: string, hlClass: string) => {
+  if (!snip) {
+    return null
+  }
+  const parts = snip.split(/(<<[^<>]*>>)/g)
+  return parts.map((part, index) =>
+    part.startsWith('<<') && part.endsWith('>>') ? (
+      <mark key={index} className={hlClass}>
+        {part.slice(2, -2)}
+      </mark>
+    ) : (
+      <span key={index}>{part}</span>
+    )
+  )
+}
+
 /** 展开的侧边栏：名称与收起按钮、开启新对话、按时间分组的会话列表、底部设置；移动端放在抽屉里，收起按钮关闭抽屉 */
 export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   const t = useTranslate()
@@ -24,6 +47,37 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   const groups = useMemo(() => groupSessions(sessions, now, t), [sessions, now, t])
   const [deleting, setDeleting] = useState<SessionSummary | null>(null)
   const [deletePending, setDeletePending] = useState(false)
+  // 搜索：输入词、命中列表、进行中、失败四个状态
+  const [query, setQuery] = useState('')
+  const [hits, setHits] = useState<SearchHit[]>([])
+  const [searching, setSearching] = useState(false)
+  const [searchFailed, setSearchFailed] = useState(false)
+
+  // 防抖 300ms：中文输入法打字时会连续触发 onChange，
+  // 不防抖的话每敲一个字就打一次服务端搜索。
+  useEffect(() => {
+    const q = query.trim()
+    if (!q) {
+      setHits([])
+      setSearching(false)
+      setSearchFailed(false)
+      return
+    }
+    setSearching(true)
+    const timer = setTimeout(() => {
+      searchSessions(q)
+        .then((list) => {
+          setHits(list)
+          setSearchFailed(false)
+        })
+        .catch(() => {
+          setHits([])
+          setSearchFailed(true)
+        })
+        .finally(() => setSearching(false))
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [query])
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>
@@ -74,21 +128,55 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
         </span>
         {t('newChat')}
       </button>
+      <div className={styles.searchWrap}>
+        <input
+          type="search"
+          className={styles.searchInput}
+          value={query}
+          placeholder={t('searchSessionsPlaceholder')}
+          aria-label={t('searchSessionsPlaceholder')}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </div>
       <div className={styles.listWrap}>
         <div className={styles.list}>
-          {groups.map((group) => (
-            <div key={group.key} className={styles.section}>
-              <div className={styles.sectionHeader}>{group.label}</div>
-              {group.sessions.map((session) => (
-                <SessionItem
-                  key={session.id}
-                  session={session}
-                  active={session.id === activeId}
-                  onDelete={() => setDeleting(session)}
-                />
-              ))}
-            </div>
-          ))}
+          {query.trim() ? (
+            searching ? (
+              <div className={styles.searchTip}>{t('searchingText')}</div>
+            ) : searchFailed ? (
+              <div className={styles.searchTip}>{t('searchFailedText')}</div>
+            ) : hits.length === 0 ? (
+              <div className={styles.searchTip}>{t('searchNoResultText')}</div>
+            ) : (
+              hits.map((hit) => (
+                <div
+                  key={hit.id}
+                  className={styles.searchHit}
+                  onClick={() => {
+                    selectSession(hit.id)
+                    closeMobileSider()
+                  }}
+                >
+                  <div className={styles.searchHitTitle}>{hit.title || t('untitledSession')}</div>
+                  <div className={styles.searchHitSnip}>{renderSnip(hit.snip, styles.hl)}</div>
+                </div>
+              ))
+            )
+          ) : (
+            groups.map((group) => (
+              <div key={group.key} className={styles.section}>
+                <div className={styles.sectionHeader}>{group.label}</div>
+                {group.sessions.map((session) => (
+                  <SessionItem
+                    key={session.id}
+                    session={session}
+                    active={session.id === activeId}
+                    onDelete={() => setDeleting(session)}
+                  />
+                ))}
+              </div>
+            ))
+          )}
         </div>
       </div>
       <div className={styles.bottom}>

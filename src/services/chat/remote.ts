@@ -17,6 +17,31 @@ export type RemoteIndexItem = {
   updatedAt: number
 }
 
+/** 一条搜索结果。snip 里命中的关键词由服务端用 << >> 包起来，前端据此高亮 */
+export type SearchHit = {
+  id: string
+  title: string
+  snip: string
+  rank: number
+}
+
+/**
+ * 全文搜索会话。
+ *
+ * 服务端有两种模式，前端不需要关心：查询词 3 个字符以上走 FTS5（trigram），
+ * 2 个字符及以下降级成 LIKE（trigram 最少 3 字符才建得出索引）。
+ * 响应里的 mode 字段只用于排查，UI 不依赖它。
+ */
+export const searchSessions = async (q: string, limit = 40): Promise<SearchHit[]> => {
+  const query = q.trim()
+  if (!query) {
+    return []
+  }
+  const res = await request(`/search?q=${encodeURIComponent(query)}&limit=${limit}`)
+  const data = (await res.json()) as { items?: SearchHit[] }
+  return data.items ?? []
+}
+
 /** 同步被拒绝时抛这个，调用方据此提示用户而不是静默重试 */
 export class SyncError extends Error {
   constructor(
