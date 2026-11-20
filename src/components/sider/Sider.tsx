@@ -150,7 +150,7 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
             ) : (
               hits.map((hit) => (
                 <div
-                  key={hit.id}
+                  key={hit.msgId || hit.id}
                   className={styles.searchHit}
                   onClick={() => {
                     void openSessionById(hit.id).then((opened) => {

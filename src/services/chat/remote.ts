@@ -19,7 +19,10 @@ export type RemoteIndexItem = {
 
 /** 一条搜索结果。snip 里命中的关键词由服务端用 << >> 包起来，前端据此高亮 */
 export type SearchHit = {
+  /** 所属会话 id */
   id: string
+  /** 命中的那条消息 id —— 同一会话可以命中多条，列表按它区分 */
+  msgId?: string
   title: string
   snip: string
   rank: number
