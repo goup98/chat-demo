@@ -32,7 +32,7 @@ export type SearchHit = {
  * 2 个字符及以下降级成 LIKE（trigram 最少 3 字符才建得出索引）。
  * 响应里的 mode 字段只用于排查，UI 不依赖它。
  */
-export const searchSessions = async (q: string, limit = 40): Promise<SearchHit[]> => {
+export const searchSessions = async (q: string, limit = 100): Promise<SearchHit[]> => {
   const query = q.trim()
   if (!query) {
     return []
